@@ -19,3 +19,22 @@ EMAIL_PASS=<your-email-password>
 npm start
 
 The backend will run on http://localhost:5000.
+
+apis
+
+http://localhost:5000/api/auth/signup
+http://localhost:5000/api/auth/login
+http://localhost:5000/api/auth/user
+http://localhost:5000/api/notifications
+http://localhost:5000/api/notifications
+
+
+Creds 
+
+Manager
+email:test@gmail.com
+paass:password123
+
+user
+email:user@gmail.com
+pass:user@123

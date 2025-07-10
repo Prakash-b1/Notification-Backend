@@ -3,13 +3,13 @@ import mongoose from 'mongoose';
 const notificationSchema = new mongoose.Schema({
   message: { type: String, required: true },
   priority: { type: String, enum: ['normal', 'high'], default: 'normal' },
-  recipient: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  }
+  createdAt: { type: Date, default: Date.now }
 });
 
-const Notification = mongoose.model('Notification', notificationSchema);
+// Auto-delete normal notifications after 2 days
+notificationSchema.index(
+  { createdAt: 1 },
+  { expireAfterSeconds: 2 * 24 * 60 * 60, partialFilterExpression: { priority: 'normal' } }
+);
 
-export default Notification;
+export default mongoose.model('Notification', notificationSchema);

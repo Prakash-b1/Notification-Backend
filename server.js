@@ -7,22 +7,21 @@ import auth from './src/routes/auth.js';
 import cors from 'cors';
 import { connectDB } from './src/config/db.js';
 import Notification from './src/models/Notification.js';
-import { activeUsers, addActiveUser, removeActiveUser } from './src/utils/activeUsers.js'; // Ensure activeUsers is correctly managed
+import { activeUsers, addActiveUser, removeActiveUserBySocketId } from './src/utils/activeUsers.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
+// Load environment variables only once
 dotenv.config();
 
 const app = express();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const server = http.createServer(app);
 
 const io = new socketIo(server, {
   cors: {
-    origin: "*", 
+    origin: "*", // 💡 For production, change this to your frontend's URL
     methods: ["GET", "POST", 'PUT', 'DELETE', 'PATCH']
   },
 });
@@ -30,56 +29,56 @@ const io = new socketIo(server, {
 connectDB();
 
 app.use((req, res, next) => {
+  // attach the same io instance to every request
   req.io = io;
   next();
 });
-
 app.use(cors());
 app.use(express.json());
 
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/auth', auth);
 
-io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+io.on('connection', socket => {
+  console.log('⚡️ new socket connected', socket.id);
 
-  // Register user when the 'register' event is received
-  socket.on('register', (userId) => {
-    console.log(`Registering user with ID: ${userId}`);
-    addActiveUser(socket.id, userId); // Associate socket.id with userId
-    console.log(`User ${userId} registered with socket ${socket.id}`);
+  socket.on('registerUser', userId => {
+    console.log('📥 registerUser received for', userId);
+    addActiveUser(userId, socket.id);
+    console.log('→ activeUsers now:', activeUsers);
   });
 
-  // Handle socket disconnection
   socket.on('disconnect', () => {
-    const userId = activeUsers[socket.id];
-    if (userId) {
-      removeActiveUser(socket.id);  // Remove user from active users on disconnect
-      console.log(`User ${userId} disconnected`);
-    }
+    removeActiveUserBySocketId(socket.id);
+    console.log('❌ socket disconnected', socket.id);
   });
 });
+
 
 // Notification cleanup for normal notifications older than 2 days
 const deleteNormalNotifications = async () => {
   const twoDaysAgo = new Date();
   twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
-  await Notification.deleteMany({
-    priority: 'normal',
-    createdAt: { $lte: twoDaysAgo },
-  });
+  try {
+    await Notification.deleteMany({
+      priority: 'normal',
+      createdAt: { $lte: twoDaysAgo },
+    });
+    console.log('Successfully deleted old normal-priority notifications.');
+  } catch (error) {
+    console.error('Error cleaning up notifications:', error);
+  }
 };
 
+// Run cleanup job every 24 hours
 setInterval(deleteNormalNotifications, 86400000);
 
-// Serve static files
+// Serve static files from the 'build' folder
 app.use(express.static(path.join(__dirname, 'build')));
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
-
-
 
 // Server listening
 server.listen(process.env.PORT || 5000, () => {

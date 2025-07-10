@@ -1,11 +1,14 @@
+
 import Notification from '../models/Notification.js';
 import nodemailer from 'nodemailer';
-import { isUserOnline } from '../utils/activeUsers.js';  
-
-import dotenv from 'dotenv';
+import { isUserOnline, activeUsers, getInactiveUserIds } from '../utils/activeUsers.js';
 import User from '../models/User.js';
+import dotenv from 'dotenv';
 
-dotenv.config();
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
+}
+
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -18,7 +21,6 @@ const transporter = nodemailer.createTransport({
 export const createNotification = async (req, res) => {
   try {
     const { message, priority, recipientId } = req.body;
-
     if (!recipientId) {
       return res.status(400).json({ message: "recipientId is required" });
     }
@@ -30,38 +32,44 @@ export const createNotification = async (req, res) => {
     });
     await notification.save();
 
-    if (priority === 'high') {
-      const recipient = await User.findById(recipientId).select('email');
-      if (!recipient) {
-        return res.status(404).json({ message: "Recipient not found" });
-      }
+    const socketId = activeUsers[recipientId];
 
-      if (!isUserOnline(recipientId)) {
-        // → Simulate sending an email
-        console.log(`User is offline, sending email to ${recipient.email}`);
-        console.log(`Email simulation: to=${recipient.email}, subject=High Priority Notification, text=${message}`);
+    console.log('Active users map:', activeUsers);
+    console.log('Looking for recipientId:', recipientId, '→ socketId:', socketId);
 
-        // If you want to actually send it, uncomment:
-        
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: recipient.email,
-          subject: 'High Priority Notification',
-          text: message
-        });
-        
-      } else {
-        console.log(`Recipient ${recipientId} is online — no email needed.`);
-      }
-    }
-
-    // 4️⃣ Broadcast the new notification
+    console.log('Broadcasting notification to everyone');
     req.io.emit('notification', notification);
+
+
+    const inactiveIds = await getInactiveUserIds();
+    console.log('Currently offline user IDs:', inactiveIds);
+
+
+    for (const userId of inactiveIds) {
+      const user = await User.findById(userId).select('email');
+      if (!user?.email) continue;
+
+      // Choose subject/body based on priority
+      const subject = priority === 'high'
+        ? 'High Priority Notification'
+        : 'You have a new notification';
+      const text = priority === 'high'
+        ? message
+        : `Hi there, you received a new notification: "${message}"`;
+
+      console.log(`Emailing ${priority}-priority notification to offline user ${user.email}`);
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: user.email,
+        subject,
+        text
+      });
+    }
 
     return res.status(201).json(notification);
   } catch (error) {
     console.error("Error creating notification:", error);
-    return res.status(500).json({ message: 'Error creating notification', error });
+    return res.status(500).json({ message: 'Error creating notification', error: error.message });
   }
 };
 

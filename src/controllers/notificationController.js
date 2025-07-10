@@ -45,25 +45,22 @@ export const createNotification = async (req, res) => {
     console.log('Currently offline user IDs:', inactiveIds);
 
 
-    for (const userId of inactiveIds) {
-      const user = await User.findById(userId).select('email');
-      if (!user?.email) continue;
+    if (priority === 'high') {
+      const inactiveIds = await getInactiveUserIds();
+      console.log('Currently offline user IDs:', inactiveIds);
 
-      // Choose subject/body based on priority
-      const subject = priority === 'high'
-        ? 'High Priority Notification'
-        : 'You have a new notification';
-      const text = priority === 'high'
-        ? message
-        : `Hi there, you received a new notification: "${message}"`;
+      for (const userId of inactiveIds) {
+        const user = await User.findById(userId).select('email');
+        if (!user?.email) continue;
 
-      console.log(`Emailing ${priority}-priority notification to offline user ${user.email}`);
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: user.email,
-        subject,
-        text
-      });
+        console.log(`Emailing high-priority notification to offline user ${user.email}`);
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: user.email,
+          subject: 'High Priority Notification',
+          text: message
+        });
+      }
     }
 
     return res.status(201).json(notification);
